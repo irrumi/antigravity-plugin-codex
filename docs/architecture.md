@@ -1,6 +1,10 @@
 # Architecture
 
-`Codex → skill → MCP stdio → Adapter → spawn(agy) → NDJSON result`
+`Codex coordinator → skill → built-in Codex worker → MCP stdio → Adapter → spawn(agy) → NDJSON result`
+
+The skill asks the coordinator to create one native Codex worker, which runs the external task and returns independently checked results. That worker is the entry shown in Codex's subagent list; `agy` itself is an external process. A role marker prevents the worker from recursively spawning another intermediary. With no subagent support, or at the user's request, the current agent runs the same task directly. The package does not add a model provider, create user-owned chats, or implement native subagent UI registration.
+
+The worker owns the full MCP task lifecycle in its session; the parent waits and routes cancellation to it. Stopping a worker alone is not proof of external-process termination. The bundled synchronous CLI is an alternative when local shell access exists but MCP tools are unavailable. Direct MCP/CLI consumers bypass the skill's subagent routing.
 
 The package is self-contained under `plugins/antigravity-plugin-codex`. The skill chooses tools; the local MCP server owns process handles and in-memory task state, which is why a server is useful here. No database, daemon, web UI, cloud backend, custom auth or runtime dependency is required. The CLI shares exactly the same adapter and runs synchronous commands; asynchronous jobs live within a single MCP session.
 

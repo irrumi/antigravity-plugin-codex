@@ -1,6 +1,6 @@
 # antigravity-plugin-codex
 
-Delegate local tasks from Codex to the **Antigravity agent CLI (`agy`)**, then bring the answer and code changes back for review. Codex remains the coordinator.
+Delegate local tasks from Codex to the **Antigravity agent CLI (`agy`)**, then bring the answer and code changes back for review. The skill routes work through a built-in Codex subagent when available, so its progress can be inspected in Codex's subagent list. Codex remains the coordinator.
 
 [Русский](README.ru.md) · [Compatibility evidence](docs/compatibility.md) · [Architecture](docs/architecture.md) · [Security](SECURITY.md)
 
@@ -80,6 +80,20 @@ If you explicitly accept review in a **writable disposable directory**, pass:
 
 The diff is supplied as text; the source repo is not the process working directory. This avoids ordinary edit collisions but is not OS containment against malicious tools. Empty diffs return `no_changes` without launching Antigravity. For comparison to a revision use `mode: "base", base: "main"`; this is `git diff main`, not a merge-base diff.
 
+## Visible subagent workflow
+
+The bundled skill requests this workflow by default:
+
+`Codex coordinator → built-in Codex worker → Antigravity MCP/CLI → result → independent checks`
+
+Ask: **“Use Antigravity through a Codex subagent to review these two files. Wait for its result and verify the findings.”** The worker appears in the native subagent activity list on clients that support it. That entry represents the Codex intermediary; the external `agy` process does not become a native Codex agent or a selectable Codex model.
+
+The coordinator creates one worker and passes the task, absolute project path, selected context, permissions and limits. The worker loads the skill, runs Antigravity, waits for a terminal result and checks its claims. It does not create another intermediary. It also owns MCP task IDs in its session, so the coordinator requests cancellation through the worker rather than assuming those IDs work across sessions. For large reviews, use focused sections and report which files were covered.
+
+If subagents are unavailable or you request direct execution, the same MCP/CLI task runs in the current agent without a subagent card. Direct MCP or CLI calls alone do not create native subagents. This routing is skill guidance, not a new MCP endpoint; the existing isolation, permission and review-consent requirements still apply. Reinstall the updated plugin and start a new chat to load the revised skill; see [Update and uninstall](#update-and-uninstall).
+
+The workflow was exercised in a Windows Codex desktop chat: a built-in worker called the bundled CLI for a focused review, received `succeeded` / exit `0`, and independently reproduced a finding. See [evidence and remaining limits](docs/compatibility.md).
+
 ## Configuration and direct CLI
 
 Defaults: 5-minute task deadline, 1 MiB input, 1 MiB combined stdout/stderr, 2 concurrent tasks, 100 retained tasks. See [examples/config.json](examples/config.json). Supply an absolute `AGY_CODEX_CONFIG` environment variable to the host or `--config FILE` to the adapter. Do not put secrets in the config. `executableArgs` is a trusted host setting for wrappers, never a task argument. Windows `.cmd/.bat/.ps1` launchers are rejected; use the native `.exe` or `node` with an absolute JS entrypoint.
@@ -140,6 +154,6 @@ node scripts/codex-smoke.mjs
 
 The smoke script invokes Codex with a read-only shell sandbox and per-run approval for only ask/status/result. It sends one fixed prompt. It prefers a locally test-installed plugin, otherwise the source package. On Windows, set `CODEX_EXECUTABLE` to native `codex.exe` if the standard npm installation layout differs. Inspect the MCP result, not merely the outer Codex exit code.
 
-Windows native behavior and local Codex CLI are verified. Linux/macOS Node code and CI jobs are included but were not executed on this Windows host; WSL requires all CLIs installed inside the same WSL environment. Codex desktop can use local MCP configuration, but its UI workflow was not tested. Cloud Codex cannot reach this local process without a separate connection mechanism. Process-tree cancellation is cooperative host integration, not protection against malicious processes that deliberately detach; see [SECURITY.md](SECURITY.md).
+Windows native behavior, local Codex CLI and a focused desktop worker → Antigravity CLI review are verified. Hosted Ubuntu CI passed; Windows/macOS CI exposed a known path-comparison failure in a test. See [compatibility evidence](docs/compatibility.md) for exact scope and remaining adapter findings. Linux/macOS desktop UI was not tested; WSL requires all CLIs installed inside the same WSL environment. Cloud Codex cannot reach this local process without a separate connection mechanism. Process-tree cancellation is cooperative host integration, not protection against malicious processes that deliberately detach; see [SECURITY.md](SECURITY.md).
 
 MIT licensed. Inspired by [simplybychris/antigravity-plugin-cc](https://github.com/simplybychris/antigravity-plugin-cc); attribution and implementation differences are in [NOTICE.md](NOTICE.md).
