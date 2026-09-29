@@ -1,42 +1,38 @@
 # antigravity-plugin-codex
 
-Передавайте задачи из локального Codex агентному CLI Antigravity (`agy`) и получайте ответ, статус и изменения для проверки. Если встроенные субагенты доступны, skill поручает работу субагенту Codex, за которым можно следить в списке субагентов. Codex остаётся координатором.
+Вызывайте Antigravity из локального чата Codex: получите второе мнение, ревью diff или результат отдельной задачи, оставаясь в одном чате. Плагин связывает Codex с Antigravity CLI (`agy`); изменения кода возвращаются для вашей проверки.
 
 [English](README.md) · [Проверенная совместимость](docs/compatibility.md) · [Архитектура](docs/architecture.md) · [Безопасность](SECURITY.md)
 
-В проект входят Codex plugin/skill, Node.js-адаптер без runtime-зависимостей и локальный MCP stdio-сервер. Используется штатная авторизация Antigravity. Облачного сервера, веб-интерфейса и собственной системы ключей нет.
+## Быстрый старт
 
-## Что проверено
-
-Windows, Codex CLI **0.155.1**, Antigravity **1.2.13**, Node **26.5.0**: настоящий путь `Codex → MCP → agy → result` вернул `AGY_CODEX_E2E_OK`, состояние `succeeded`, exit code `0`. Это проверка простого запроса; она не подтверждает все модели и сценарии редактирования. Ошибки, лимиты, изоляция и отмена покрыты воспроизводимыми fake-тестами.
-
-## Установка
-
-Нужны Node.js **22+**, Git, локальный Codex с командой `plugin add` и авторизованный Antigravity CLI. Установите его по [официальной инструкции Google](https://www.antigravity.google/docs/cli/install/), при необходимости один раз запустите `agy` в терминале для входа. Проект не устанавливает CLI автоматически и не меняет его настройки.
+Нужны Node.js **22+**, Git, локальный Codex с поддержкой плагинов и [установленный Antigravity CLI](https://www.antigravity.google/docs/cli/install/) со входом в аккаунт. Плагин устанавливается из исходников; релиза npm пока нет.
 
 ```powershell
 git clone https://github.com/irrumi/antigravity-plugin-codex.git
 cd antigravity-plugin-codex
-npm.cmd ci --ignore-scripts
-npm.cmd run check
-npm.cmd test
-node plugins/antigravity-plugin-codex/src/cli.mjs doctor
 codex.cmd plugin marketplace add .
 codex.cmd plugin add antigravity-plugin-codex@antigravity-local
-codex.cmd mcp list
+node plugins/antigravity-plugin-codex/src/cli.mjs doctor
 ```
 
-Для Linux/macOS команды называются `npm` и `codex`. Стандартный пользовательский каталог `agy` определяется автоматически, затем используется PATH. IDE launcher не считается агентным CLI.
+Для Linux/macOS используйте `codex` вместо `codex.cmd`. В PowerShell при необходимости сначала войдите через интерактивный запуск `agy`. Команда `doctor` проверяет наличие CLI, но без `--probe-auth` не проверяет авторизацию.
 
 Откройте новый чат Codex, разрешите нужные MCP-вызовы по своей обычной политике и напишите:
 
 > Попроси Antigravity объяснить, что такое Git worktree. Не используй инструменты и не меняй файлы.
 
-> Передай Antigravity задачу: исправить обработку пустого ввода. Рабочий каталог — C:/projects/example.
+Codex запустит локальную задачу Antigravity и вернёт ответ в чат. В реальной проверке путь `Codex → MCP → agy → result` завершился состоянием `succeeded`, кодом `0` и запрошенным ответом `AGY_CODEX_E2E_OK`.
 
-> Получи второе мнение Antigravity по этим двум файлам.
+## Зачем использовать
 
-Это обычные запросы, а не новые slash-команды Codex. Skill `antigravity` также доступен через выбор навыков. Установка использует штатные команды Codex и не заменяет пользовательский конфиг целиком. Тестовая установка проверялась в отдельном `CODEX_HOME`; для обычной работы менять его не нужно.
+Когда нужен взгляд второго агента, обычно приходится переносить контекст в другой CLI и вручную сопоставлять ответы или изменения. Этот плагин делает запрос из чата Codex, запускает Antigravity в отдельном каталоге и возвращает результат. Codex остаётся координатором; изменения не применяются автоматически.
+
+Если встроенные субагенты доступны, skill запускает Antigravity через видимого субагента Codex. Внешний `agy` остаётся отдельным процессом. Это обычные запросы к skill, а не новые slash-команды.
+
+В проект входят Codex plugin/skill, Node.js-адаптер без runtime-зависимостей и локальный MCP stdio-сервер. Используется штатная авторизация Antigravity. Облачного сервера, веб-интерфейса и собственной системы ключей нет. Подробности по платформам и проверкам — в [документе совместимости](docs/compatibility.md).
+
+Для разработки: `npm.cmd ci --ignore-scripts`, затем `npm.cmd run check` и `npm.cmd test`. См. [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Возможности
 

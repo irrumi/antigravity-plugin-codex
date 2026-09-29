@@ -1,44 +1,57 @@
 # antigravity-plugin-codex
 
-Delegate local tasks from Codex to the **Antigravity agent CLI (`agy`)**, then bring the answer and code changes back for review. The skill routes work through a built-in Codex subagent when available, so its progress can be inspected in Codex's subagent list. Codex remains the coordinator.
+Use Antigravity from a local Codex chat to get a second opinion, review a diff, or delegate a coding task. This plugin connects Codex to the Antigravity CLI (`agy`) and returns the result for you to inspect.
 
 [Русский](README.ru.md) · [Compatibility evidence](docs/compatibility.md) · [Architecture](docs/architecture.md) · [Security](SECURITY.md)
 
-Includes a Codex plugin/skill, a dependency-free Node.js adapter, and a local MCP stdio server. No web service or separate API credentials. Uses your normal Antigravity authentication.
+## Quick start
 
-## Verified status
-
-On Windows, Codex CLI **0.155.1**, Antigravity CLI **1.2.13**, Node **26.5.0**: a real `Codex → MCP → agy → result` smoke test returned `AGY_CODEX_E2E_OK`, state `succeeded`, exit code `0`. This verifies a simple prompt, not every model or code-editing workflow. Reproducible fake tests exercise failures, isolation and cancellation. See [exact evidence and limits](docs/compatibility.md).
-
-## Install locally
-
-Prerequisites: Node.js **22+**, Git, local Codex CLI with `codex plugin add`, and an authenticated agent CLI. Install Antigravity from [Google's instructions](https://www.antigravity.google/docs/cli/install/); this project does not run remote installers or modify its settings. Launch `agy` interactively once to sign in if needed.
+Requires Node.js 22+, Git, a local Codex CLI with plugin support, and an [installed, signed-in Antigravity CLI](https://www.antigravity.google/docs/cli/install/). This project is installed from source; it has no npm release or separate API key.
 
 ```sh
 git clone https://github.com/irrumi/antigravity-plugin-codex.git
 cd antigravity-plugin-codex
-npm ci --ignore-scripts
-npm run check
-npm test
-node plugins/antigravity-plugin-codex/src/cli.mjs doctor
 codex plugin marketplace add .
 codex plugin add antigravity-plugin-codex@antigravity-local
-codex mcp list
+node plugins/antigravity-plugin-codex/src/cli.mjs doctor
 ```
 
-In Windows PowerShell, use `npm.cmd` / `codex.cmd` if execution policy blocks the `.ps1` shims. The adapter discovers the official user-local `agy` binary before falling back to PATH. It never substitutes an IDE launcher. Plugin-local `cwd: "."` resolves to the installed plugin root in the verified Codex version.
+Open a **new local Codex chat** and ask:
 
-Start a **new Codex session**, approve the intended MCP calls under your existing policy, and say:
+> Ask Antigravity to explain Git worktrees in one sentence. Do not run commands or change files.
 
-> Use Antigravity to answer: what is a Git worktree? Do not use tools or edit files.
+Codex starts the local Antigravity task and brings its answer back to the chat. In a verified smoke run, the MCP result reported `state: "succeeded"`, `exitCode: 0`, and the requested answer `AGY_CODEX_E2E_OK`. The `doctor` command checks the installed CLI and supported flags; it does **not** verify sign-in unless you add `--probe-auth`, which sends a real request.
 
-> Передай Antigravity задачу: добавь обработку пустого ввода. Рабочий каталог — …
+In Windows PowerShell, use `codex.cmd` if execution policy blocks its `.ps1` shim. Sign in with an interactive `agy` session if needed. Installation uses Codex's marketplace commands and does not install or reconfigure Antigravity. See [update and uninstall](#update-and-uninstall) for later changes.
 
-> Ask Antigravity for a second opinion on these two files.
+## Why use it?
 
-These are natural-language requests; this project does not invent `/agy:*` Codex commands. You can also explicitly invoke the installed `antigravity` skill using the skill picker.
+Switching between coding agents manually means copying context out, running a second CLI, and reconciling its answer or edits. This bridge lets Codex request a second opinion and track the local task while you stay in the same chat. Codex remains the coordinator and asks you to review any returned code changes.
 
-Installation uses Codex's own marketplace/plugin commands and preserves unrelated settings. Test installation was performed under a separate `CODEX_HOME`; the user's global configuration was not rewritten. Do not set a fresh `CODEX_HOME` for normal use, because it also changes authentication/config lookup.
+- **Ask or review:** Send a focused question, selected files, or a staged, unstaged, or revision-based diff.
+- **Delegate code work:** Give Antigravity an independent clone of committed `HEAD`; inspect its returned diff before applying anything.
+- **Track and stop tasks:** Get status and results from the MCP server, with time and output limits and cancellation support.
+- **See a Codex worker:** When native subagents are available, the skill runs Antigravity through a visible Codex subagent. The external CLI itself remains a separate process.
+
+`Codex chat → Codex skill/worker → local MCP adapter → agy → answer or diff`
+
+## Common requests
+
+> Ask Antigravity for a second opinion on `src/parser.ts` in `/absolute/path/to/project`.
+
+> Have Antigravity review the staged diff in `/absolute/path/to/project` and return concrete findings.
+
+> Delegate empty-input handling in `/absolute/path/to/project` to Antigravity; report its diff and test results.
+
+The review request needs your explicit acceptance of a writable disposable workspace because this CLI has no verified fully read-only mode. A delegated task runs against committed `HEAD`; your uncommitted files are not copied. See [review safety](#review-safety) and [tool behavior](#tools).
+
+## Installation notes and supported environments
+
+This repository supplies a Codex plugin and skill, a Node.js adapter with no runtime dependencies, and a local MCP stdio server. The adapter discovers the standard user-local `agy` executable before trying PATH; an Antigravity IDE launcher is not enough. In the tested Codex version, the plugin's MCP working directory resolves to the installed plugin root.
+
+The project has no published npm package or GitHub release. Local Windows use was verified with Codex CLI 0.155.1, Antigravity CLI 1.2.13, and Node 26.5.0. Ubuntu CI runs with Node 22 and 24; Windows and macOS CI jobs are paused after a known test path-comparison failure. Linux/macOS desktop use is not verified. See [compatibility evidence](docs/compatibility.md) for the exact test scope.
+
+Approve the intended MCP calls under your normal Codex policy. The install does not replace your Codex config; testing used a separate `CODEX_HOME`. Keep your existing `CODEX_HOME` for normal use because it also affects authentication. Natural-language requests and the installed `antigravity` skill are the supported entry points; there are no `/agy:*` slash commands.
 
 ## Tools
 
@@ -96,7 +109,13 @@ The workflow was exercised in a Windows Codex desktop chat: a built-in worker ca
 
 ## Configuration and direct CLI
 
-Defaults: 5-minute task deadline, 1 MiB input, 1 MiB combined stdout/stderr, 2 concurrent tasks, 100 retained tasks. See [examples/config.json](examples/config.json). Supply an absolute `AGY_CODEX_CONFIG` environment variable to the host or `--config FILE` to the adapter. Do not put secrets in the config. `executableArgs` is a trusted host setting for wrappers, never a task argument. Windows `.cmd/.bat/.ps1` launchers are rejected; use the native `.exe` or `node` with an absolute JS entrypoint.
+Defaults: 5-minute task deadline, 1 MiB input, 1 MiB combined stdout/stderr, 2 concurrent tasks, 100 retained tasks. Optional config example:
+
+```json
+{"timeoutMs": 120000, "maxConcurrent": 1}
+```
+
+Save it as JSON and pass its absolute path through `AGY_CODEX_CONFIG` in the Codex host environment, or use `--config FILE` with the direct CLI. Unspecified fields keep their defaults; see [the full example](examples/config.json). Do not put secrets in the config. `executableArgs` is a trusted host setting for wrappers, never a task argument. Windows `.cmd/.bat/.ps1` launchers are rejected; use the native `.exe` or `node` with an absolute JS entrypoint.
 
 `model` is passed verbatim through the locally confirmed `--model` flag. No alias table and no global model-setting edits. Unsupported capabilities fail closed. An unset model uses the CLI's normal selection. Headless requests use stdin, not shell quoting or long command-line arguments.
 
@@ -145,15 +164,20 @@ For the MCP-only fallback use `codex mcp remove antigravity`, and remove only th
 
 ## Verification and support scope
 
+For local development and contributions:
+
 ```sh
+npm ci --ignore-scripts
 npm run check
 npm test
 # Optional, uses real accounts and quota; no persisted config changes:
 node scripts/codex-smoke.mjs
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution and compatibility requirements. The local checks use a fake Antigravity CLI and do not contact a provider.
+
 The smoke script invokes Codex with a read-only shell sandbox and per-run approval for only ask/status/result. It sends one fixed prompt. It prefers a locally test-installed plugin, otherwise the source package. On Windows, set `CODEX_EXECUTABLE` to native `codex.exe` if the standard npm installation layout differs. Inspect the MCP result, not merely the outer Codex exit code.
 
-Windows native behavior, local Codex CLI and a focused desktop worker → Antigravity CLI review are verified. CI currently runs on Ubuntu with Node 22 and 24; Windows/macOS jobs are paused after a known path-comparison failure in a test. See [compatibility evidence](docs/compatibility.md) for exact scope and remaining adapter findings. Linux/macOS desktop UI was not tested; WSL requires all CLIs installed inside the same WSL environment. Cloud Codex cannot reach this local process without a separate connection mechanism. Process-tree cancellation is cooperative host integration, not protection against malicious processes that deliberately detach; see [SECURITY.md](SECURITY.md).
+The focused desktop worker → Antigravity CLI review also succeeded on Windows. See [compatibility evidence](docs/compatibility.md) for exact scope and remaining adapter findings. WSL requires both CLIs inside the same WSL environment. Cloud Codex cannot reach this local process without a separate connection mechanism. Process-tree cancellation does not contain deliberately detached processes; see [SECURITY.md](SECURITY.md).
 
 MIT licensed. Inspired by [simplybychris/antigravity-plugin-cc](https://github.com/simplybychris/antigravity-plugin-cc); attribution and implementation differences are in [NOTICE.md](NOTICE.md).
