@@ -1,0 +1,15 @@
+{
+  "name": "antigravity-plugin-codex",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Codex to Antigravity CLI bridge",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "doctor": "node plugins/antigravity-plugin-codex/src/cli.mjs doctor",
+    "start": "node plugins/antigravity-plugin-codex/src/cli.mjs serve",
+    "check": "node scripts/check.mjs"
+  }
+}

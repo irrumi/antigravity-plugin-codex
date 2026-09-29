@@ -1,0 +1,9 @@
+{
+  "executable": "agy",
+  "executableArgs": [],
+  "timeoutMs": 300000,
+  "maxOutputBytes": 1048576,
+  "maxInputBytes": 1048576,
+  "maxConcurrent": 2,
+  "maxTasks": 100
+}

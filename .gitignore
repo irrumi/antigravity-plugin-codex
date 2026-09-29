@@ -1,0 +1,8 @@
+node_modules/
+.local/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.codebase-memory/

@@ -1,0 +1,21 @@
+{
+  "name": "antigravity-plugin-codex",
+  "version": "0.1.0",
+  "description": "Delegate isolated tasks and get second opinions from your local Antigravity CLI.",
+  "license": "MIT",
+  "repository": "https://github.com/irrumi/antigravity-plugin-codex",
+  "author": {
+    "name": "antigravity-plugin-codex contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Antigravity Plugin Codex",
+    "shortDescription": "Delegate local tasks to Antigravity.",
+    "longDescription": "Local MCP bridge with capability checks, isolated code tasks, bounded execution, cancellation and explicit review safety limits.",
+    "developerName": "antigravity-plugin-codex contributors",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": ["Ask Antigravity for a second opinion.", "Delegate this task to Antigravity.", "Check whether Antigravity is ready."]
+  },
+  "mcpServers": "./.mcp.json"
+}
