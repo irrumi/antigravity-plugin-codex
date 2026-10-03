@@ -3,6 +3,7 @@ import { mkdtemp, realpath, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { configuration, fail, integer, redactor } from './config.mjs';
+import { sanitize, diagnosticText, protocolEvents } from './sanitize.mjs';
 import { runProcess } from './process.mjs';
 import { contextText, readDiff, isolatedClone, changes } from './git.mjs';
 
@@ -31,7 +32,7 @@ export class Adapter {
   async inspect({ probeAuth = false, signal } = {}) {
     const c = this.config;
     const version = await runProcess(c.executable, [...c.executableArgs, '--version'], { signal, timeoutMs: 5000, maxOutputBytes: 65536 });
-    const report = { executable: c.executable, installed: !version.error, version: this.redact(version.stdout.trim()), supported: false, auth: 'unknown', capabilities: {}, limitations: ['No verified full read-only mode', 'Capabilities are checked from local help; real integration requires a successful probe'] };
+    const report = { executable: this.redact(c.executable), installed: !version.error, version: this.redact(version.stdout.trim()), supported: false, auth: 'unknown', capabilities: {}, limitations: ['No verified full read-only mode', 'Capabilities are checked from local help; real integration requires a successful probe'] };
     if (version.error || version.exitCode !== 0 || version.reason) return { ...report, error: version.error === 'ENOENT' ? 'CLI_MISSING' : 'VERSION_PROBE_FAILED' };
     const help = await runProcess(c.executable, [...c.executableArgs, '--help'], { signal, timeoutMs: 5000, maxOutputBytes: 262144 });
     if (help.error || help.exitCode !== 0 || help.reason) return { ...report, error: 'HELP_PROBE_FAILED' };
@@ -47,7 +48,7 @@ export class Adapter {
       const probe = await this.invoke('Reply with exactly AGY_CODEX_OK. Do not use tools.', workspace, undefined, Math.min(c.timeoutMs, 30000), signal);
       report.auth = probe.state === 'succeeded' && probe.answer.trim() === 'AGY_CODEX_OK' ? 'verified' : probe.error?.code === 'AUTH_REQUIRED' ? 'required' : 'unknown';
       report.probe = probe;
-      report.probeWorkspace = workspace;
+      report.probeWorkspace = this.redact(workspace);
     }
     return report;
   }
@@ -57,22 +58,23 @@ export class Adapter {
     if (this.capabilities?.disableSlashCommands) args.push('--disable-slash-commands');
     if (model) args.push('--model', model);
     const r = await runProcess(c.executable, args, { cwd, input: JSON.stringify({ event: 'user', message: { content: prompt } }) + '\n', signal, timeoutMs, maxOutputBytes: c.maxOutputBytes, detectInteractive: true });
-    const result = { state: 'failed', answer: '', error: null, exitCode: r.exitCode, durationMs: r.durationMs, stdout: this.redact(r.stdout), stderr: this.redact(r.stderr), checks: [] };
+    const result = { state: 'failed', answer: '', error: null, exitCode: r.exitCode, durationMs: r.durationMs, stdout: '[CLI stdout omitted: invalid or incomplete protocol]', stderr: diagnosticText(r.stderr, this.redact), checks: [] };
     const error = (code, message) => ({ ...result, error: { code, message: this.redact(message) } });
     if (r.cleanupFailed) { this.closed = true; return error('CLEANUP_FAILED', 'Process-tree termination could not be confirmed. Server refuses new tasks. Inspect running processes and workspace before restarting.'); }
     if (r.reason) return { ...error(r.reason.toUpperCase(), `Execution stopped: ${r.reason}`), state: ['timed_out', 'cancelled'].includes(r.reason) ? r.reason : 'failed' };
     if (r.error) return error(r.error === 'ENOENT' ? 'CLI_MISSING' : 'SPAWN_FAILED', r.error);
     if (/authentication required|not authenticated|unauthorized|login required/i.test(r.stderr)) return error('AUTH_REQUIRED', 'Authenticate interactively with the selected CLI, then retry explicitly.');
     let events;
-    try { events = r.stdout.split(/\r?\n/).filter(s => s.trim()).map(s => JSON.parse(s)); }
-    catch { return error(r.exitCode ? 'CLI_EXIT' : 'INVALID_OUTPUT', 'CLI did not produce the documented NDJSON output'); }
-    const results = events.filter(e => e?.event === 'result');
-    for (const e of events) {
-      const step = e?.step_update;
-      if (step?.tool_name === 'run_command' && step.state === 'DONE' && step.tool_info) result.checks.push({ ...JSON.parse(this.redact(JSON.stringify(step.tool_info))), source: 'antigravity-tool-report-unverified' });
-    }
-    if (results.length !== 1 || typeof results[0]?.result?.response !== 'string') return error('INVALID_OUTPUT', 'Expected exactly one result event with a response string');
-    const envelope = results[0].result;
+    try {
+      // Parse and validate raw protocol before sanitizing any display copies.
+      events = protocolEvents(r.stdout);
+      result.stdout = sanitize(events, this.redact).map(event => JSON.stringify(event)).join('\n');
+      for (const event of events) {
+        const step = event.step_update;
+        if (step?.tool_name === 'run_command' && step.state === 'DONE' && step.tool_info) result.checks.push({ ...sanitize(step.tool_info, this.redact), source: 'antigravity-tool-report-unverified' });
+      }
+    } catch { return error(r.exitCode ? 'CLI_EXIT' : 'INVALID_OUTPUT', 'Expected valid NDJSON with exactly one result response and status'); }
+    const envelope = events.find(event => event.event === 'result').result;
     result.answer = this.redact(envelope.response);
     if (r.exitCode !== 0 || envelope.status !== 'SUCCESS') return error(envelope.status === 'WAITING' ? 'PERMISSION_REQUIRED' : 'CLI_FAILED', envelope.error || `CLI status ${envelope.status}; exit ${r.exitCode}`);
     // Headless CLI can soft-deny tools while returning SUCCESS and exit 0.
@@ -135,7 +137,7 @@ export class Adapter {
     } catch (error) {
       if (error.code === 'CLEANUP_FAILED') this.closed = true;
       task.state = 'failed';
-      task.error = { code: error.code || 'INTERNAL_ERROR', message: this.redact(error.message) };
+      task.error = { code: this.redact(error.code || 'INTERNAL_ERROR'), message: this.redact(error.message) };
     } finally {
       clearTimeout(timer);
       if (controller.signal.aborted && task.error?.code !== 'CLEANUP_FAILED') {
@@ -143,7 +145,7 @@ export class Adapter {
         task.error = { code: task.state.toUpperCase(), message: 'Execution stopped. Inspect the workspace before retrying; no automatic retry was made.' };
       }
       if (clone) {
-        try { Object.assign(task, await changes(clone.workspace, clone.baseCommit, this.config.maxOutputBytes)); task.diff = this.redact(task.diff); }
+        try { Object.assign(task, sanitize(await changes(clone.workspace, clone.baseCommit, this.config.maxOutputBytes), this.redact)); }
         catch (error) {
           task.warnings.push(`Change collection failed: ${this.redact(error.message)}. Workspace preserved.`);
           if (task.state === 'succeeded') { task.state = 'needs_attention'; task.error = { code: 'CHANGE_COLLECTION_FAILED', message: 'Inspect the preserved workspace' }; }
@@ -156,11 +158,11 @@ export class Adapter {
   record(id) { const record = this.tasks.get(id); if (!record) fail('TASK_NOT_FOUND', 'Unknown task ID (tasks are scoped to this server session)'); return record; }
   status(id) {
     const { task } = this.record(id);
-    return { id: task.id, kind: task.kind, state: !this.record(id).finished && terminal(task.state) ? 'finalizing' : task.state, workspace: task.workspace, startedAt: task.startedAt, finishedAt: task.finishedAt, error: task.error };
+    return { id: task.id, kind: task.kind, state: !this.record(id).finished && terminal(task.state) ? 'finalizing' : task.state, workspace: sanitize(task.workspace, this.redact), startedAt: task.startedAt, finishedAt: task.finishedAt, error: structuredClone(task.error) };
   }
-  result(id) { return { ...structuredClone(this.record(id).task), state: this.status(id).state }; }
+  result(id) { const task = structuredClone(this.record(id).task); return { ...task, workspace: sanitize(task.workspace, this.redact), state: this.status(id).state }; }
   async wait(id) { const record = this.record(id); await record.promise; return this.result(id); }
   cancel(id) { const record = this.record(id); if (!record.finished) record.controller.abort(); return { ...this.status(id), cancellationRequested: !record.finished }; }
-  forget(id) { const record = this.record(id); if (!record.finished) fail('TASK_RUNNING', 'Cancel and await the task first'); this.tasks.delete(id); return { forgotten: id, workspacePreserved: record.task.workspace }; }
+  forget(id) { const record = this.record(id); if (!record.finished) fail('TASK_RUNNING', 'Cancel and await the task first'); this.tasks.delete(id); return { forgotten: id, workspacePreserved: sanitize(record.task.workspace, this.redact) }; }
   async close() { this.closed = true; const records = [...this.tasks.values(), ...this.probes]; for (const r of records) if (!r.finished) r.controller.abort(); await Promise.allSettled(records.map(r => r.promise)); }
 }
