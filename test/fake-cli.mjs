@@ -29,7 +29,11 @@ if (prompt === 'TREE') {
   console.error(`CHILD_PID=${child.pid}`);
   await delay(10000);
 }
-if (prompt.startsWith('EDIT')) {
+if (prompt === 'EDIT_SYNTHETIC_REDACTION') {
+  await writeFile('tracked.txt', 'SYNTHETIC_ONLY_patch_value\n');
+  await writeFile('SYNTHETIC_ONLY_filename.txt', 'SYNTHETIC_ONLY_patch_value\n');
+  send('Edited synthetic artifacts');
+} else if (prompt.startsWith('EDIT')) {
   await writeFile('tracked.txt', 'agent change\n');
   await writeFile('new.txt', 'new file\n');
   send('Edited files');
