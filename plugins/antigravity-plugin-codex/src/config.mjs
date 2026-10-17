@@ -33,7 +33,7 @@ export async function loadConfiguration(path = process.env.AGY_CODEX_CONFIG) {
 }
 // Best-effort defense for known credential values, not a general DLP filter.
 export function redactor(env = process.env) {
-  const secrets = Object.entries(env).filter(([k, v]) => /token|secret|password|api_?key/i.test(k) && v?.length >= 8).map(([, v]) => v);
+  const secrets = Object.entries(env).filter(([k, v]) => /token|secret|password|api_?key/i.test(k) && typeof v === 'string' && v.length >= 8).map(([, v]) => v).sort((a, b) => b.length - a.length);
   return value => {
     let text = String(value ?? '');
     for (const secret of secrets) text = text.split(secret).join('[REDACTED]');

@@ -160,3 +160,28 @@ test('server close cancels an active task and refuses new starts', async () => {
   assert.equal(a.result(id).state, 'cancelled');
   assert.throws(() => a.start('ask', { cwd, prompt: 'hello' }), { code: 'SHUTTING_DOWN' });
 });
+
+
+test('display redaction covers filenames and paths without altering source or workspace patch bytes', async () => {
+  const { cwd, git } = await repo();
+  const a = make();
+  const patchValue = 'SYNTHETIC_ONLY_patch_value';
+  const filename = 'SYNTHETIC_ONLY_filename';
+  a.redact = redactor({ TEST_API_KEY: patchValue, TEST_SECRET: filename });
+  const before = git('diff', 'HEAD');
+  const result = await a.wait(a.start('delegate', { cwd, prompt: 'EDIT_SYNTHETIC_REDACTION' }).id);
+  assert.equal(result.state, 'succeeded');
+  assert.match(result.diff, /\[REDACTED\]/);
+  assert.ok(!result.diff.includes(patchValue));
+  assert.deepEqual(result.untrackedFiles, ['[REDACTED].txt']);
+  assert.equal(await readFile(join(result.workspace, 'tracked.txt'), 'utf8'), patchValue + '\n');
+  assert.equal(await readFile(join(result.workspace, filename + '.txt'), 'utf8'), patchValue + '\n');
+  assert.match(execFileSync('git', ['-C', result.workspace, 'diff'], { encoding: 'utf8' }), /SYNTHETIC_ONLY_patch_value/);
+  assert.equal(git('diff', 'HEAD'), before);
+  assert.equal(await readFile(join(cwd, 'tracked.txt'), 'utf8'), 'committed\n');
+  // Operational paths are retained privately; every outward task view is masked.
+  a.redact = redactor({ TEST_SECRET: result.workspace });
+  assert.equal(a.status(result.id).workspace, '[REDACTED]');
+  assert.equal(a.result(result.id).workspace, '[REDACTED]');
+  assert.equal(a.forget(result.id).workspacePreserved, '[REDACTED]');
+});
